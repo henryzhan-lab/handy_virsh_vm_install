@@ -87,6 +87,30 @@ def ask_int(prompt, default, minimum, maximum):
         return value
 
 
+def ask_cpu_binding():
+    max_cpu = (os.cpu_count() or 1) - 1
+    pattern = re.compile(r"\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*")
+    while True:
+        binding = input(
+            "CPU binding (host CPUs, e.g. 0-3,6; empty for no binding) [none]: "
+        ).strip()
+        if not binding:
+            return None
+        if not pattern.fullmatch(binding):
+            print("Enter a comma-separated list of CPU numbers or ranges, or leave empty.")
+            continue
+        valid = True
+        for item in binding.split(","):
+            bounds = [int(value) for value in item.split("-")]
+            start, end = bounds[0], bounds[-1]
+            if start > end or end > max_cpu:
+                valid = False
+                break
+        if valid:
+            return binding
+        print(f"CPU numbers must be between 0 and {max_cpu}, with valid ranges.")
+
+
 def ask_release():
     releases = list(RELEASES)
     print("\nAvailable OS images:")
@@ -253,6 +277,7 @@ def main():
     release = ask_release()
     disk_gib = ask_int("Root disk size in GiB", 20, 5, 4096)
     vcpus = ask_int("Number of vCPUs", 2, 1, 128)
+    cpu_binding = ask_cpu_binding()
     mem_gib = ask_int("Memory in GiB", 4, 1, 1024)
     data_disk = ask_data_disk()
     console = ask_console()
@@ -298,11 +323,14 @@ def main():
     if data_disk_path:
         disk_args.append(f"--disk=path={data_disk_path},format=qcow2,bus=scsi")
 
+    cpu_args = [f"--cpuset={cpu_binding}"] if cpu_binding else []
+
     run([
         "virt-install",
         f"--name={name}",
         f"--ram={mem_gib * 1024}",
         f"--vcpus={vcpus}",
+        *cpu_args,
         "--import",
         *disk_args,
         "--controller=type=scsi,model=virtio-scsi",
